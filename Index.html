@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Employee Attendance Tracker • SM City Batangas</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Employee Attendance Tracker</h1>
+      <p>SM City Batangas • Pallocan Kanluran, Batangas City</p>
+    </div>
+  </header>
+
+  <main>
+    <div id="inAppBrowserBanner" class="warning-banner hidden">
+      <strong>Tip:</strong> You appear to be using an in-app browser (Messenger / Facebook / Viber), which can block camera or GPS permissions. For best results, tap the menu icon (<strong>⋮</strong> or <strong>•••</strong>) and select <strong>Open in Chrome</strong> or <strong>Open in Safari</strong>.
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" id="attendanceTab" onclick="showTab('attendance')">Attendance</button>
+      <button class="tab" id="dashboardTab" onclick="showTab('dashboard')">My Dashboard</button>
+      <button class="tab" id="responsesTab" onclick="showTab('responses')">Admin</button>
+    </div>
+
+    <section id="attendancePanel" class="card">
+      <h2>Daily attendance</h2>
+      <p class="muted">A live selfie taken by a person and a GPS location inside <strong>SM City Batangas (including parking lots)</strong> are required to submit.</p>
+      <div id="formNotice" class="notice"></div>
+      <form id="attendanceForm" onsubmit="submitForm(event)">
+        <div class="grid">
+          <div>
+            <label for="employeeId">Employee ID *</label>
+            <input id="employeeId" required autocomplete="off" placeholder="e.g. 10022774" onblur="lookupEmployeeName()">
+            <p id="employeeLookupStatus" class="hint">Enter your Employee ID to display your registered name.</p>
+          </div>
+          <div>
+            <label for="employeeName">Employee Name</label>
+            <input id="employeeName" readonly placeholder="Auto-filled after ID lookup">
+          </div>
+          <div>
+            <label for="role">Role for the Day *</label>
+            <select id="role" required>
+              <option value="">Select your role</option>
+              <option>Admin</option>
+              <option>Assistant Retail Manager</option>
+              <option>CXA</option>
+              <option>CXA / Head Cashier</option>
+              <option>CXA / TM</option>
+              <option>Inventory Planning Associate</option>
+              <option>Retail Manager</option>
+            </select>
+          </div>
+          <div>
+            <label for="action">Activity *</label>
+            <select id="action" required>
+              <option value="IN">Time In</option>
+              <option value="OUT">Time Out</option>
+            </select>
+          </div>
+
+          <!-- Live Person Selfie Verification -->
+          <div class="verify-box">
+            <label>Live Person Selfie Verification *</label>
+            <p id="camStatus" class="hint" style="margin:0">Tap "Open Front Camera" to capture your live selfie.</p>
+            <div class="cam-frame hidden" id="camFrame">
+              <video id="cameraVideo" autoplay playsinline muted></video>
+              <img id="selfiePreview" class="hidden" alt="Captured selfie">
+            </div>
+            <canvas id="selfieCanvas" class="hidden"></canvas>
+            <input type="file" id="nativeCamInput" accept="image/*" capture="user" class="hidden" onchange="handleNativeSelfie(event)">
+            <div class="cam-actions">
+              <button type="button" class="secondary" id="nativeCamBtn" onclick="openNativeCamera()">Open Front Camera</button>
+              <button type="button" class="secondary" id="retryCamBtn" onclick="startCamera(false)">Use Live Preview</button>
+              <button type="button" class="secondary hidden" id="captureBtn" onclick="captureSelfie()">Take Live Selfie</button>
+              <button type="button" class="secondary hidden" id="retakeBtn" onclick="retakeSelfie()">Retake Selfie</button>
+            </div>
+          </div>
+
+          <!-- Geofenced Location Tracker -->
+          <div class="verify-box">
+            <label>Geofenced Location Check *</label>
+            <p class="hint" style="margin:0">Allowed zone: <strong>SM City Batangas Premises &amp; Parking Lots</strong>.</p>
+            <div id="locationStatus" class="loc-pill"><span class="pulse-dot"></span><span>Locking onto location...</span></div>
+            <div id="locationDetails" class="addr-box hidden">
+              <strong id="locationAddress">SM City Batangas, Pallocan Kanluran, Batangas City</strong>
+              <small id="locationCoords"></small>
+            </div>
+            <div class="cam-actions">
+              <button type="button" class="secondary" onclick="refreshLocation(true)">Recalibrate GPS</button>
+            </div>
+          </div>
+
+          <div class="wide">
+            <label for="remarks">Remarks (optional)</label>
+            <textarea id="remarks" placeholder="Optional notes"></textarea>
+          </div>
+
+          <!-- RA 10173 Data Privacy Notice & Consent -->
+          <div class="wide privacy-box">
+            <label class="consent-label" for="privacyConsent">
+              <input type="checkbox" id="privacyConsent" required>
+              <span>
+                <strong>Data Privacy Notice (RA 10173):</strong> I consent to the collection and processing of my selfie photo, GPS location at SM City Batangas, and attendance timestamps strictly for timekeeping and payroll verification. Selfies are stored privately for authorized store management and automatically deleted after 30 days.
+              </span>
+            </label>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="primary" id="submitBtn" type="submit">Submit Attendance</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="dashboardPanel" class="card hidden">
+      <div class="dash-head">
+        <div>
+          <h2>My Employee Dashboard</h2>
+          <p id="dashName" class="muted">Enter your Employee ID and personal PIN to view only your own attendance records.</p>
+        </div>
+        <div class="dash-controls">
+          <div>
+            <label for="dashId">Employee ID</label>
+            <input id="dashId" placeholder="Employee ID" autocomplete="off">
+          </div>
+          <div>
+            <label for="dashPin">Employee PIN</label>
+            <input id="dashPin" type="password" inputmode="numeric" placeholder="Your PIN" autocomplete="off">
+          </div>
+          <div>
+            <label for="dashMonth">Month</label>
+            <input id="dashMonth" type="month">
+          </div>
+          <button class="primary" id="dashLoadBtn" onclick="loadDashboard()">View My Records</button>
+        </div>
+      </div>
+      <div id="dashNotice" class="notice"></div>
+      <div id="dashContent" class="hidden">
+        <div class="summary-grid">
+          <div class="stat-card ok">
+            <div class="stat-label">Days Present</div>
+            <div class="stat-val" id="sumPresent">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Hours Worked</div>
+            <div class="stat-val" id="sumHours">0:00</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Early Out Days</div>
+            <div class="stat-val" id="sumEarly">0</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Employee ID</th>
+                <th>Employee Name</th>
+                <th>Role</th>
+                <th>Time In</th>
+                <th>Time Out</th>
+                <th>In Location</th>
+                <th>Out Location</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody id="dashRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="responsesPanel" class="card hidden">
+      <h2>Admin Portal</h2>
+      <p class="muted">Administrator access only. Enter your PIN to view attendance logs and manage employees.</p>
+      <div id="responseNotice" class="notice"></div>
+      <div class="grid">
+        <div>
+          <label for="adminPin">Administrator PIN</label>
+          <input id="adminPin" type="password" placeholder="Enter PIN" onkeydown="if(event.key==='Enter') loadResponses()">
+        </div>
+        <div style="align-self:end">
+          <button class="primary" id="adminUnlockBtn" style="width:100%" onclick="loadResponses()">Unlock Admin Panel</button>
+        </div>
+      </div>
+
+      <div id="adminUnlockedArea" class="hidden">
+        <div class="sub-tabs">
+          <button type="button" class="sub-tab active" id="subTabLogs" onclick="switchAdminView('logs')">Attendance Logs</button>
+          <button type="button" class="sub-tab" id="subTabEmployees" onclick="switchAdminView('employees')">Manage Employees</button>
+        </div>
+
+        <!-- View 1: Attendance Responses -->
+        <div id="adminLogsView">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <p id="sheetLink" class="hint" style="margin:0"></p>
+            <span id="logsCountLabel" class="hint"></span>
+          </div>
+
+          <div class="search-bar-row">
+            <input type="search" id="adminLogSearch" placeholder="Search by ID, name, role, or remarks..." oninput="filterAdminLogs()">
+            <input type="date" id="adminLogDateFilter" onchange="filterAdminLogs()" title="Filter by date">
+            <button type="button" class="mini-btn" onclick="clearAdminLogSearch()">Clear</button>
+          </div>
+
+          <div class="table-wrap">
+            <table id="responseTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Employee ID</th>
+                  <th>Employee Name</th>
+                  <th>Role</th>
+                  <th>Time In</th>
+                  <th>Time Out</th>
+                  <th>In Location</th>
+                  <th>Out Location</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody id="responseRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- View 2: Add & Manage Employees -->
+        <div id="adminEmployeesView" class="hidden">
+          <div class="verify-box" style="margin-bottom:18px">
+            <h3 id="empFormHeading" style="margin:0 0 4px;font-size:16px">Add New Employee</h3>
+            <p id="empFormSubheading" class="muted" style="margin:0 0 14px">Register a new employee ID and default personal PIN for attendance and dashboard access.</p>
+            <div id="addEmpNotice" class="notice"></div>
+            <form id="addEmployeeForm" onsubmit="submitEmployeeForm(event)">
+              <input type="hidden" id="empFormMode" value="add">
+              <div class="grid">
+                <div>
+                  <label for="newEmpId">Employee ID *</label>
+                  <input id="newEmpId" required autocomplete="off" placeholder="e.g. 10025001">
+                </div>
+                <div>
+                  <label for="newEmpName">Full Name *</label>
+                  <input id="newEmpName" required autocomplete="off" placeholder="e.g. Juan Dela Cruz">
+                </div>
+                <div>
+                  <label for="newEmpPin">Personal PIN (min 4 chars) *</label>
+                  <input id="newEmpPin" required value="1234" autocomplete="off" placeholder="e.g. 1234">
+                </div>
+                <div>
+                  <label for="newEmpActive">Account Status *</label>
+                  <select id="newEmpActive" required>
+                    <option value="YES" selected>Active (YES)</option>
+                    <option value="NO">Inactive (NO)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="actions" style="display:flex;gap:10px">
+                <button type="submit" class="primary" id="addEmpBtn" style="flex:1">Add Employee</button>
+                <button type="button" class="secondary hidden" id="cancelEditEmpBtn" onclick="resetEmployeeForm()">Cancel Edit</button>
+              </div>
+            </form>
+          </div>
+
+          <h3 style="margin:0 0 6px;font-size:16px">Registered Employees (<span id="empCount">0</span>)</h3>
+
+          <div class="search-bar-row">
+            <input type="search" id="adminEmpSearch" placeholder="Search employees by ID, name, or status..." oninput="filterAdminEmployees()">
+            <button type="button" class="mini-btn" onclick="clearAdminEmpSearch()">Clear</button>
+          </div>
+
+          <div class="table-wrap">
+            <table style="min-width:600px">
+              <thead>
+                <tr>
+                  <th>Employee ID</th>
+                  <th>Employee Name</th>
+                  <th>Status</th>
+                  <th>Personal PIN</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="employeeDirectoryRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
