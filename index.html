@@ -95,6 +95,7 @@
       border: 1px solid #93c5fd;
       border-radius: 12px;
       padding: 14px;
+      margin-top: 16px;
       margin-bottom: 16px;
     }
     .setup-row {
@@ -499,20 +500,20 @@
             </table>
           </div>
         </div>
+      </div>
 
-        <!-- View 3: Server Settings (Unlocked Admin Phase Only) -->
-        <div id="adminServerView" class="hidden">
-          <div id="apiSetupBar" class="setup-bar">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-              <strong style="color:#1e3a8a;font-size:14px">Google Apps Script Server Connection</strong>
-              <span id="apiPingStatus" class="hint" style="font-weight:600">Ready</span>
-            </div>
-            <p class="hint" style="margin:4px 0 0">Paste your deployed Google Apps Script Web App URL (ending in <code>/exec</code>) and click <strong>Test &amp; Save</strong> to override the default URL on this browser.</p>
-            <div class="setup-row">
-              <input id="apiUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec">
-              <button type="button" class="primary" id="apiTestBtn" onclick="saveAndTestApiUrl()">Test &amp; Save</button>
-              <button type="button" class="secondary" onclick="resetApiUrlOverride()">Reset Default</button>
-            </div>
+      <!-- View 3: Server Settings (Admin Tab Only - auto-shows if URL is unconfigured) -->
+      <div id="adminServerView" class="hidden">
+        <div id="apiSetupBar" class="setup-bar">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+            <strong style="color:#1e3a8a;font-size:14px">Google Apps Script Server Connection</strong>
+            <span id="apiPingStatus" class="hint" style="font-weight:600">Ready</span>
+          </div>
+          <p class="hint" style="margin:4px 0 0">Paste your deployed Google Apps Script Web App URL (ending in <code>/exec</code>) and click <strong>Test &amp; Save</strong> to connect this browser.</p>
+          <div class="setup-row">
+            <input id="apiUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+            <button type="button" class="primary" id="apiTestBtn" onclick="saveAndTestApiUrl()">Test &amp; Save</button>
+            <button type="button" class="secondary" onclick="resetApiUrlOverride()">Reset Default</button>
           </div>
         </div>
       </div>
@@ -521,7 +522,7 @@
 
   <script>
     // PASTE YOUR GOOGLE APPS SCRIPT /exec URL INSIDE THE QUOTES BELOW:
-    const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbz5I56zVUtPUkjfgfyiDIM6FXgUloaBN2KmCICK0sgIVJoyuoEsONJeHy8wHLDtPgzH/exec';
+    const DEFAULT_API_URL = 'PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE';
 
     function getActiveApiUrl() {
       const saved = String(localStorage.getItem('ATTENDANCE_API_URL') || '').trim();
@@ -561,6 +562,9 @@
         localStorage.setItem('ATTENDANCE_API_URL', url);
         statusEl.textContent = '✓ Connected (' + (res && res.status ? res.status : 'Online') + ')';
         statusEl.style.color = '#166534';
+        if (document.getElementById('adminPin').value) {
+          loadResponses();
+        }
       } catch (err) {
         statusEl.textContent = '✗ ' + err.message;
         statusEl.style.color = '#991b1b';
@@ -646,7 +650,7 @@
     async function runAppsScript(methodName, args = [], maxRetries = 2) {
       const cleanUrl = getActiveApiUrl();
       if (!cleanUrl) {
-        throw new Error('Server URL is not configured in index.html. Contact the administrator.');
+        throw new Error('Server URL is not configured in index.html. Go to the Admin tab to configure your Apps Script URL.');
       }
 
       let attempt = 0;
@@ -724,6 +728,10 @@
         stopLocationWatcher();
       } else {
         startSmoothLocationTracker();
+      }
+      if (which === 'responses' && !getActiveApiUrl()) {
+        document.getElementById('adminServerView').classList.remove('hidden');
+        document.getElementById('apiUrlInput').value = '';
       }
       if (which !== 'dashboard') {
         document.getElementById('dashPin').value = '';
@@ -1554,6 +1562,12 @@
         return;
       }
 
+      if (!getActiveApiUrl()) {
+        document.getElementById('adminServerView').classList.remove('hidden');
+        notice('responseNotice', 'Paste your Google Apps Script /exec URL below and click Test & Save first.', false);
+        return;
+      }
+
       btn.disabled = true;
       btn.textContent = 'Verifying...';
 
@@ -1561,6 +1575,7 @@
         const rows = await runAppsScript('getResponses', [pin], 2);
         document.getElementById('responseNotice').style.display = 'none';
         document.getElementById('adminUnlockedArea').classList.remove('hidden');
+        switchAdminView('logs');
 
         allAdminResponses = rows || [];
         filterAdminLogs();
