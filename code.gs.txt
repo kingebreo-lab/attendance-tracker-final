@@ -7,7 +7,7 @@ const CONFIG = {
   SELFIE_RETENTION_DAYS: 30,
   // Store your actual key in Project Settings > Script Properties as GEMINI_API_KEY
   GEMINI_API_KEY: '',
-  GEMINI_MODELS: ['gemini-2.5-flash-lite', 'gemini-2.5-flash'],
+  GEMINI_MODELS: ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash'],
   ENFORCE_AI_SELFIE_CHECK: true,
   ALLOWED_LOCATION_LABEL: 'SM City Batangas Premises & Parking Lots (Pallocan Kanluran, Batangas City)',
   ALLOWED_CENTER_LAT: 13.7554,
@@ -104,55 +104,73 @@ function setup() {
 }
 
 // ==========================================
-// STANDALONE WEB APP REST API ENDPOINTS
+// STANDALONE WEB APP REST + JSONP API
 // ==========================================
 
-function doGet() {
-  return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, status: 'Attendance API Online' }))
-    .setMimeType(ContentService.MimeType.JSON);
+function routeApiRequest_(action, args) {
+  setupIfNeeded_();
+  switch (String(action || '').trim()) {
+    case 'ping':
+      return { status: 'Attendance API Online', time: new Date().toISOString() };
+    case 'lookupEmployee':
+      return lookupEmployee(args[0]);
+    case 'preVerifySelfie':
+      return preVerifySelfie(args[0]);
+    case 'submitAttendance':
+      return submitAttendance(args[0]);
+    case 'getEmployeeDashboard':
+      return getEmployeeDashboard(args[0], args[1], args[2]);
+    case 'getResponses':
+      return getResponses(args[0]);
+    case 'getSpreadsheetUrl':
+      return getSpreadsheetUrl(args[0]);
+    case 'getEmployeesList':
+      return getEmployeesList(args[0]);
+    case 'addNewEmployee':
+      return addNewEmployee(args[0], args[1]);
+    case 'updateEmployeeDetails':
+      return updateEmployeeDetails(args[0], args[1]);
+    default:
+      throw new Error('Unknown API action: ' + action);
+  }
+}
+
+function doGet(e) {
+  const params = (e && e.parameter) ? e.parameter : {};
+  const callback = String(params.callback || '').replace(/[^a-zA-Z0-9_$.]/g, '');
+
+  try {
+    const action = params.action || 'ping';
+    const args = params.args ? JSON.parse(params.args) : [];
+    const result = routeApiRequest_(action, Array.isArray(args) ? args : []);
+    const payload = JSON.stringify({ ok: true, data: result });
+
+    if (callback) {
+      return ContentService
+        .createTextOutput(callback + '(' + payload + ');')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService
+      .createTextOutput(payload)
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    const errPayload = JSON.stringify({ ok: false, error: err.message || String(err) });
+    if (callback) {
+      return ContentService
+        .createTextOutput(callback + '(' + errPayload + ');')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService
+      .createTextOutput(errPayload)
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 function doPost(e) {
   try {
-    setupIfNeeded_();
     const raw = (e && e.postData && e.postData.contents) ? e.postData.contents : '{}';
     const body = JSON.parse(raw);
-    const action = String(body.action || '').trim();
-    const args = Array.isArray(body.args) ? body.args : [];
-    let result;
-
-    switch (action) {
-      case 'lookupEmployee':
-        result = lookupEmployee(args[0]);
-        break;
-      case 'preVerifySelfie':
-        result = preVerifySelfie(args[0]);
-        break;
-      case 'submitAttendance':
-        result = submitAttendance(args[0]);
-        break;
-      case 'getEmployeeDashboard':
-        result = getEmployeeDashboard(args[0], args[1], args[2]);
-        break;
-      case 'getResponses':
-        result = getResponses(args[0]);
-        break;
-      case 'getSpreadsheetUrl':
-        result = getSpreadsheetUrl(args[0]);
-        break;
-      case 'getEmployeesList':
-        result = getEmployeesList(args[0]);
-        break;
-      case 'addNewEmployee':
-        result = addNewEmployee(args[0], args[1]);
-        break;
-      case 'updateEmployeeDetails':
-        result = updateEmployeeDetails(args[0], args[1]);
-        break;
-      default:
-        throw new Error('Unknown API action: ' + action);
-    }
+    const result = routeApiRequest_(body.action, Array.isArray(body.args) ? body.args : []);
 
     return ContentService
       .createTextOutput(JSON.stringify({ ok: true, data: result }))
@@ -284,7 +302,7 @@ function callGeminiFast_(parts, responseMimeType) {
 
   const models = Array.isArray(CONFIG.GEMINI_MODELS) && CONFIG.GEMINI_MODELS.length
     ? CONFIG.GEMINI_MODELS
-    : ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
+    : ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
 
   let lastError = '';
 
@@ -302,8 +320,8 @@ function callGeminiFast_(parts, responseMimeType) {
     if (responseMimeType) {
       payload.generationConfig.responseMimeType = responseMimeType;
     }
-    if (model.includes('2.5')) {
-      payload.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    if (model.startsWith('gemini-3')) {
+      payload.generationConfig.thinkingConfig = { thinkingLevel: 'LOW' };
     }
 
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
@@ -768,7 +786,6 @@ function syncPersonalEmployeeSheet_(employee, month, summary, records) {
     ss = SpreadsheetApp.create('Attendance - ' + employee.employeeName + ' (' + employee.employeeId + ')');
     fileId = ss.getId();
     props.setProperty(propKey, fileId);
-    // Kept PRIVATE for RA 10173 Data Privacy compliance
     try {
       const file = DriveApp.getFileById(fileId);
       file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
