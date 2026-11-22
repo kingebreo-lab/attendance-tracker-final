@@ -87,6 +87,30 @@
       font-size: 13px;
       line-height: 1.45;
     }
+    .setup-bar {
+      background: #eff6ff;
+      border: 1px solid #93c5fd;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    .setup-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .setup-row input {
+      flex: 1 1 260px;
+      min-height: 42px;
+      font-size: 14px;
+      padding: 8px 12px;
+    }
+    .setup-row button {
+      min-height: 42px;
+      padding: 8px 16px;
+      font-size: 14px;
+    }
     .hidden { display: none !important; }
     .dash-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
     .dash-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
@@ -203,6 +227,19 @@
       <strong>Tip:</strong> You appear to be using an in-app browser (Messenger / Facebook / Viber), which can block camera or GPS permissions. For best results, tap the menu icon (<strong>⋮</strong> or <strong>•••</strong>) and select <strong>Open in Chrome</strong> or <strong>Open in Safari</strong>.
     </div>
 
+    <!-- Built-in API Connection Setup & Diagnostic Bar -->
+    <div id="apiSetupBar" class="setup-bar hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <strong style="color:#1e3a8a;font-size:14px">Google Apps Script Server Connection</strong>
+        <span id="apiPingStatus" class="hint" style="font-weight:600">Not connected</span>
+      </div>
+      <p class="hint" style="margin:4px 0 0">Paste your deployed Google Apps Script Web App URL (ending in <code>/exec</code>) and click <strong>Test &amp; Save</strong>.</p>
+      <div class="setup-row">
+        <input id="apiUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+        <button type="button" class="primary" id="apiTestBtn" onclick="saveAndTestApiUrl()">Test &amp; Save</button>
+      </div>
+    </div>
+
     <div class="tabs">
       <button type="button" class="tab active" id="attendanceTab" onclick="showTab('attendance')">Attendance</button>
       <button type="button" class="tab" id="dashboardTab" onclick="showTab('dashboard')">My Dashboard</button>
@@ -210,7 +247,10 @@
     </div>
 
     <section id="attendancePanel" class="card">
-      <h2>Daily attendance</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0">Daily attendance</h2>
+        <button type="button" class="mini-btn" onclick="toggleApiSetupBar()">Server Settings</button>
+      </div>
       <p class="muted">A live selfie taken by a person and a GPS location inside <strong>SM City Batangas (including parking lots)</strong> are required to submit.</p>
       <div id="formNotice" class="notice"></div>
       <form id="attendanceForm" onsubmit="submitForm(event)">
@@ -469,7 +509,58 @@
 
   <script>
     // PASTE YOUR GOOGLE APPS SCRIPT /exec URL INSIDE THE QUOTES BELOW:
-    const API_URL = 'https://script.google.com/a/macros/globe.com.ph/s/AKfycbz5I56zVUtPUkjfgfyiDIM6FXgUloaBN2KmCICK0sgIVJoyuoEsONJeHy8wHLDtPgzH/exec';
+    const DEFAULT_API_URL = 'PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE';
+
+    function getActiveApiUrl() {
+      const saved = String(localStorage.getItem('ATTENDANCE_API_URL') || '').trim();
+      if (saved && saved.startsWith('https://script.google.com/')) return saved;
+      const def = String(DEFAULT_API_URL || '').trim();
+      if (def && def.startsWith('https://script.google.com/')) return def;
+      return '';
+    }
+
+    function toggleApiSetupBar(forceShow) {
+      const bar = document.getElementById('apiSetupBar');
+      if (typeof forceShow === 'boolean') {
+        bar.classList.toggle('hidden', !forceShow);
+      } else {
+        bar.classList.toggle('hidden');
+      }
+      const input = document.getElementById('apiUrlInput');
+      if (!input.value) input.value = getActiveApiUrl();
+    }
+
+    async function saveAndTestApiUrl() {
+      const input = document.getElementById('apiUrlInput');
+      const statusEl = document.getElementById('apiPingStatus');
+      const btn = document.getElementById('apiTestBtn');
+      const url = String(input.value || '').trim();
+
+      if (!url.startsWith('https://script.google.com/macros/s/') || !url.endsWith('/exec')) {
+        statusEl.textContent = 'Invalid URL (must start with https://script.google.com/macros/s/ and end with /exec)';
+        statusEl.style.color = '#991b1b';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Testing...';
+      statusEl.textContent = 'Connecting to Apps Script...';
+      statusEl.style.color = '#92400e';
+
+      try {
+        const res = await callViaJsonp(url, 'ping', []);
+        localStorage.setItem('ATTENDANCE_API_URL', url);
+        statusEl.textContent = '✓ Connected (' + (res && res.status ? res.status : 'Online') + ')';
+        statusEl.style.color = '#166534';
+        setTimeout(() => document.getElementById('apiSetupBar').classList.add('hidden'), 1500);
+      } catch (err) {
+        statusEl.textContent = '✗ ' + err.message;
+        statusEl.style.color = '#991b1b';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test & Save';
+      }
+    }
 
     const ALLOWED_ZONE = {
       label: 'SM City Batangas Premises & Parking Lots (Pallocan Kanluran, Batangas City)',
@@ -515,7 +606,7 @@
         const script = document.createElement('script');
         const timer = setTimeout(() => {
           cleanup();
-          reject(new Error('Server request timed out. Check your internet connection or Apps Script deployment.'));
+          reject(new Error('Connection timed out. Ensure Apps Script is deployed as "Anyone" under a New Version.'));
         }, 15000);
 
         function cleanup() {
@@ -532,7 +623,7 @@
 
         script.onerror = function() {
           cleanup();
-          reject(new Error('Blocked by browser or Apps Script is not set to "Anyone". Verify API_URL in index.html.'));
+          reject(new Error('Apps Script did not return valid JavaScript. Check that Web App access is set to "Anyone" and republished as a New Version.'));
         };
 
         const sep = cleanUrl.includes('?') ? '&' : '?';
@@ -545,9 +636,10 @@
     }
 
     async function runAppsScript(methodName, args = [], maxRetries = 2) {
-      const cleanUrl = String(API_URL || '').trim();
-      if (!cleanUrl || cleanUrl.includes('PASTE_YOUR_GOOGLE_APPS_SCRIPT')) {
-        throw new Error('Backend API_URL is not configured in index.html.');
+      const cleanUrl = getActiveApiUrl();
+      if (!cleanUrl) {
+        toggleApiSetupBar(true);
+        throw new Error('Please paste your Google Apps Script /exec URL in the blue Server Connection bar at the top.');
       }
 
       let attempt = 0;
@@ -1493,6 +1585,9 @@
       const ua = navigator.userAgent || '';
       if (/FBAN|FBAV|Messenger|Instagram|Viber|Line\//i.test(ua)) {
         document.getElementById('inAppBrowserBanner').classList.remove('hidden');
+      }
+      if (!getActiveApiUrl()) {
+        toggleApiSetupBar(true);
       }
       const d = new Date();
       document.getElementById('dashMonth').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
