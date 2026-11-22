@@ -777,7 +777,7 @@ function getEmployeeDashboard(employeeId, employeePin, month) {
     if (r[4]) present++;
     if (earlyMin > 0) early++;
     if (r[4] && r[5]) {
-      totalMinutes += Math.max(0, Math.round((new Date(r[5].replace(' ', 'T')) - new Date(r[4].replace(' ', 'T'))) / 60000));
+      totalMinutes += calculateWorkedMinutes_(r[4], r[5], r[0]);
     }
     records.push({
       date: r[0],
@@ -884,11 +884,58 @@ function syncPersonalEmployeeSheet_(employee, month, summary, records) {
   return ss.getUrl();
 }
 
+function parseTimestampMs_(timeVal, fallbackDate) {
+  const s = String(timeVal || '').trim();
+  if (!s) return NaN;
+
+  // Match optional YYYY-MM-DD followed by H:MM(:SS) and optional AM/PM
+  const m = s.match(/^(?:(\d{4}-\d{2}-\d{2})[T\s]+)?(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+  if (m) {
+    const datePart = m[1] || String(fallbackDate || '2000-01-01').slice(0, 10);
+    const dParts = datePart.split('-').map(Number);
+    let hour = Number(m[2]);
+    const min = Number(m[3]);
+    const sec = Number(m[4] || 0);
+    const ampm = (m[5] || '').toUpperCase();
+
+    if (ampm === 'PM' && hour < 12) hour += 12;
+    if (ampm === 'AM' && hour === 12) hour = 0;
+
+    return Date.UTC(dParts[0], dParts[1] - 1, dParts[2], hour, min, sec);
+  }
+
+  const parsed = Date.parse(s.replace(' ', 'T'));
+  return isNaN(parsed) ? NaN : parsed;
+}
+
+function calculateWorkedMinutes_(timeIn, timeOut, dateStr) {
+  const startMs = parseTimestampMs_(timeIn, dateStr);
+  let endMs = parseTimestampMs_(timeOut, dateStr);
+  if (isNaN(startMs) || isNaN(endMs)) return 0;
+
+  // Handle overnight shifts if Time Out is past midnight without a date prefix
+  if (endMs < startMs && !/\d{4}-\d{2}-\d{2}/.test(String(timeOut))) {
+    endMs += 24 * 60 * 60 * 1000;
+  }
+
+  return Math.max(0, Math.round((endMs - startMs) / 60000));
+}
+
 function earlyMinutes_(time) {
-  if (!time) return 0;
-  const t = String(time).slice(11, 16);
-  const a = t.split(':').map(Number), b = CONFIG.WORK_END.split(':').map(Number);
-  return Math.max(0, (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]));
+  const s = String(time || '').trim();
+  if (!s) return 0;
+
+  const m = s.match(/(?:^|[T\s])(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (!m) return 0;
+
+  let hour = Number(m[1]);
+  const min = Number(m[2]);
+  const ampm = (m[3] || '').toUpperCase();
+  if (ampm === 'PM' && hour < 12) hour += 12;
+  if (ampm === 'AM' && hour === 12) hour = 0;
+
+  const b = CONFIG.WORK_END.split(':').map(Number);
+  return Math.max(0, (b[0] * 60 + b[1]) - (hour * 60 + min));
 }
 
 // ==========================================
