@@ -92,7 +92,7 @@
       border: 1px solid #93c5fd;
       border-radius: 12px;
       padding: 14px;
-      margin-top: 16px;
+      margin-bottom: 16px;
     }
     .setup-row {
       display: flex;
@@ -174,7 +174,7 @@
     .proof-addr { font-size: 12px; color: var(--ink); line-height: 1.35; margin-bottom: 4px; }
     .link-btn { display: inline-block; color: var(--blue); text-decoration: none; font-weight: 600; font-size: 13px; padding: 3px 0; }
     .link-btn:hover { text-decoration: underline; }
-    .sub-tabs { display: flex; gap: 8px; margin: 16px 0; border-bottom: 1px solid var(--line); padding-bottom: 12px; flex-wrap: wrap; }
+    .sub-tabs { display: flex; gap: 8px; margin: 16px 0; border-bottom: 1px solid var(--line); padding-bottom: 12px; flex-wrap: wrap; align-items: center; }
     .sub-tab { border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; border-radius: 10px; padding: 9px 14px; font-weight: 600; font-size: 13px; cursor: pointer; }
     .sub-tab.active { background: #14233b; color: #fff; border-color: #14233b; }
     .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; }
@@ -379,24 +379,8 @@
     </section>
 
     <section id="responsesPanel" class="card hidden">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-        <h2 style="margin:0">Admin Portal</h2>
-        <button type="button" class="mini-btn" onclick="toggleApiSetupBar()">Server Settings</button>
-      </div>
+      <h2>Admin Portal</h2>
       <p class="muted">Administrator access only. Enter your PIN to view attendance logs and manage employees.</p>
-
-      <!-- Built-in API Connection Setup & Diagnostic Bar (Admin Only) -->
-      <div id="apiSetupBar" class="setup-bar hidden">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-          <strong style="color:#1e3a8a;font-size:14px">Google Apps Script Server Connection</strong>
-          <span id="apiPingStatus" class="hint" style="font-weight:600">Not connected</span>
-        </div>
-        <p class="hint" style="margin:4px 0 0">Paste your deployed Google Apps Script Web App URL (ending in <code>/exec</code>) and click <strong>Test &amp; Save</strong>.</p>
-        <div class="setup-row">
-          <input id="apiUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec">
-          <button type="button" class="primary" id="apiTestBtn" onclick="saveAndTestApiUrl()">Test &amp; Save</button>
-        </div>
-      </div>
 
       <div id="responseNotice" class="notice"></div>
       <div class="grid">
@@ -409,12 +393,15 @@
         </div>
       </div>
 
+      <!-- Unlocked Admin Phase -->
       <div id="adminUnlockedArea" class="hidden">
         <div class="sub-tabs">
           <button type="button" class="sub-tab active" id="subTabLogs" onclick="switchAdminView('logs')">Attendance Logs</button>
           <button type="button" class="sub-tab" id="subTabEmployees" onclick="switchAdminView('employees')">Manage Employees</button>
+          <button type="button" class="sub-tab" id="subTabServer" onclick="switchAdminView('server')">Server Settings</button>
         </div>
 
+        <!-- View 1: Attendance Logs -->
         <div id="adminLogsView">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
             <p id="sheetLink" class="hint" style="margin:0"></p>
@@ -447,6 +434,7 @@
           </div>
         </div>
 
+        <!-- View 2: Manage Employees -->
         <div id="adminEmployeesView" class="hidden">
           <div class="verify-box" style="margin-bottom:18px">
             <h3 id="empFormHeading" style="margin:0 0 4px;font-size:16px">Add New Employee</h3>
@@ -504,6 +492,22 @@
             </table>
           </div>
         </div>
+
+        <!-- View 3: Server Settings (Unlocked Admin Phase Only) -->
+        <div id="adminServerView" class="hidden">
+          <div id="apiSetupBar" class="setup-bar">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+              <strong style="color:#1e3a8a;font-size:14px">Google Apps Script Server Connection</strong>
+              <span id="apiPingStatus" class="hint" style="font-weight:600">Ready</span>
+            </div>
+            <p class="hint" style="margin:4px 0 0">Paste your deployed Google Apps Script Web App URL (ending in <code>/exec</code>) and click <strong>Test &amp; Save</strong> to override the default URL on this browser.</p>
+            <div class="setup-row">
+              <input id="apiUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+              <button type="button" class="primary" id="apiTestBtn" onclick="saveAndTestApiUrl()">Test &amp; Save</button>
+              <button type="button" class="secondary" onclick="resetApiUrlOverride()">Reset Default</button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -520,15 +524,12 @@
       return '';
     }
 
-    function toggleApiSetupBar(forceShow) {
-      const bar = document.getElementById('apiSetupBar');
-      if (typeof forceShow === 'boolean') {
-        bar.classList.toggle('hidden', !forceShow);
-      } else {
-        bar.classList.toggle('hidden');
-      }
-      const input = document.getElementById('apiUrlInput');
-      if (!input.value) input.value = getActiveApiUrl();
+    function resetApiUrlOverride() {
+      localStorage.removeItem('ATTENDANCE_API_URL');
+      document.getElementById('apiUrlInput').value = getActiveApiUrl();
+      const statusEl = document.getElementById('apiPingStatus');
+      statusEl.textContent = 'Reverted to default URL';
+      statusEl.style.color = '#64748b';
     }
 
     async function saveAndTestApiUrl() {
@@ -553,7 +554,6 @@
         localStorage.setItem('ATTENDANCE_API_URL', url);
         statusEl.textContent = '✓ Connected (' + (res && res.status ? res.status : 'Online') + ')';
         statusEl.style.color = '#166534';
-        setTimeout(() => document.getElementById('apiSetupBar').classList.add('hidden'), 1500);
       } catch (err) {
         statusEl.textContent = '✗ ' + err.message;
         statusEl.style.color = '#991b1b';
@@ -639,9 +639,7 @@
     async function runAppsScript(methodName, args = [], maxRetries = 2) {
       const cleanUrl = getActiveApiUrl();
       if (!cleanUrl) {
-        showTab('responses');
-        toggleApiSetupBar(true);
-        throw new Error('Server URL is not configured. Please paste your Google Apps Script /exec URL in Admin > Server Settings.');
+        throw new Error('Server URL is not configured in index.html. Contact the administrator.');
       }
 
       let attempt = 0;
@@ -1370,8 +1368,14 @@
     function switchAdminView(view) {
       document.getElementById('adminLogsView').classList.toggle('hidden', view !== 'logs');
       document.getElementById('adminEmployeesView').classList.toggle('hidden', view !== 'employees');
+      document.getElementById('adminServerView').classList.toggle('hidden', view !== 'server');
       document.getElementById('subTabLogs').classList.toggle('active', view === 'logs');
       document.getElementById('subTabEmployees').classList.toggle('active', view === 'employees');
+      document.getElementById('subTabServer').classList.toggle('active', view === 'server');
+
+      if (view === 'server') {
+        document.getElementById('apiUrlInput').value = getActiveApiUrl();
+      }
     }
 
     function filterAdminLogs() {
