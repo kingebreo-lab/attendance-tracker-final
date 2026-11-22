@@ -126,7 +126,7 @@
     .stat-card.ok .stat-val { color: var(--green); }
     .stat-card.warn .stat-val { color: var(--amber); }
     .table-wrap { overflow: auto; margin-top: 16px; }
-    table { border-collapse: collapse; width: 100%; min-width: 960px; }
+    table { border-collapse: collapse; width: 100%; min-width: 1020px; }
     th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 13px; vertical-align: top; }
     th { background: #f8fafc; }
     .empty { text-align: center; padding: 24px; color: var(--muted); }
@@ -324,6 +324,7 @@
         <div>
           <h2>My Employee Dashboard</h2>
           <p id="dashName" class="muted">Enter your Employee ID and personal PIN to view only your own attendance records.</p>
+          <p id="dashSheetLink" class="hint" style="margin:4px 0 0"></p>
         </div>
         <div class="dash-controls">
           <div>
@@ -367,6 +368,7 @@
                 <th>Role</th>
                 <th>Time In</th>
                 <th>Time Out</th>
+                <th>Worked Hours</th>
                 <th>In Location</th>
                 <th>Out Location</th>
                 <th>Remarks</th>
@@ -424,6 +426,7 @@
                   <th>Role</th>
                   <th>Time In</th>
                   <th>Time Out</th>
+                  <th>Worked Hours</th>
                   <th>In Location</th>
                   <th>Out Location</th>
                   <th>Remarks</th>
@@ -478,13 +481,14 @@
           </div>
 
           <div class="table-wrap">
-            <table style="min-width:600px">
+            <table style="min-width:650px">
               <thead>
                 <tr>
                   <th>Employee ID</th>
                   <th>Employee Name</th>
                   <th>Status</th>
                   <th>Personal PIN</th>
+                  <th>Personal Sheet</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -723,6 +727,7 @@
         document.getElementById('dashRows').innerHTML = '';
         document.getElementById('dashContent').classList.add('hidden');
         document.getElementById('dashNotice').style.display = 'none';
+        document.getElementById('dashSheetLink').innerHTML = '';
         document.getElementById('dashName').textContent = 'Enter your Employee ID and personal PIN to view only your own attendance records.';
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1306,6 +1311,7 @@
         tr.appendChild(buildCell('Role', r.role || '—'));
         tr.appendChild(buildCell('Time In', formatTime12(r.timeIn)));
         tr.appendChild(buildCell('Time Out', formatTime12(r.timeOut)));
+        tr.appendChild(buildCell('Worked Hours', r.workedHours || '—'));
         tr.appendChild(buildLocationCell('In Location', r.timeInLocation));
         tr.appendChild(buildLocationCell('Out Location', r.timeOutLocation));
         tr.appendChild(buildCell('Remarks', r.remarks || '—'));
@@ -1326,8 +1332,10 @@
       const month = document.getElementById('dashMonth').value;
       const body = document.getElementById('dashRows');
       const loadBtn = document.getElementById('dashLoadBtn');
+      const sheetLinkEl = document.getElementById('dashSheetLink');
 
       body.innerHTML = '';
+      sheetLinkEl.innerHTML = '';
       document.getElementById('dashContent').classList.add('hidden');
 
       if (!id) { notice('dashNotice', 'Enter your Employee ID.', false); return; }
@@ -1343,6 +1351,16 @@
         document.getElementById('dashContent').classList.remove('hidden');
         document.getElementById('dashName').textContent = 'Personal Attendance Sheet: ' + r.employeeName + ' (' + r.employeeId + ') • ' + r.month;
 
+        if (r.personalSheetUrl) {
+          const a = document.createElement('a');
+          a.href = r.personalSheetUrl;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.className = 'link-btn';
+          a.textContent = 'Open My Google Sheet (' + r.month + ')';
+          sheetLinkEl.appendChild(a);
+        }
+
         const sum = r.summary || { present: 0, totalHours: '0:00', early: 0 };
         document.getElementById('sumPresent').textContent = sum.present;
         document.getElementById('sumHours').textContent = sum.totalHours;
@@ -1353,7 +1371,7 @@
           r.records,
           r.employeeId,
           r.employeeName,
-          9,
+          10,
           'No attendance records found for your ID in ' + r.month + '.'
         );
       } catch (e) {
@@ -1407,7 +1425,7 @@
       const emptyMsg = allAdminResponses.length
         ? 'No attendance logs match your search filter.'
         : 'No attendance responses recorded yet.';
-      renderRecordsTable(document.getElementById('responseRows'), filtered, '', '', 9, emptyMsg);
+      renderRecordsTable(document.getElementById('responseRows'), filtered, '', '', 10, emptyMsg);
     }
 
     function clearAdminLogSearch() {
@@ -1486,6 +1504,21 @@
 
         tr.appendChild(buildCell('Personal PIN', emp.employeePin || '—'));
 
+        const sheetTd = document.createElement('td');
+        sheetTd.setAttribute('data-label', 'Personal Sheet');
+        if (emp.personalSheetUrl) {
+          const link = document.createElement('a');
+          link.href = emp.personalSheetUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.className = 'link-btn';
+          link.textContent = 'Open Sheet';
+          sheetTd.appendChild(link);
+        } else {
+          sheetTd.textContent = 'Not checked yet';
+        }
+        tr.appendChild(sheetTd);
+
         const actionTd = document.createElement('td');
         actionTd.setAttribute('data-label', 'Action');
         const editBtn = document.createElement('button');
@@ -1505,7 +1538,7 @@
         const emptyMsg = allAdminEmployees.length
           ? 'No employees match your search.'
           : 'No employees found in directory.';
-        tr.innerHTML = '<td colspan="5" class="empty">' + emptyMsg + '</td>';
+        tr.innerHTML = '<td colspan="6" class="empty">' + emptyMsg + '</td>';
         tbody.appendChild(tr);
       }
     }
@@ -1535,7 +1568,7 @@
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
           a.className = 'link-btn';
-          a.textContent = 'Open Google Spreadsheet database';
+          a.textContent = 'Open Master Google Spreadsheet (Attendance, Employees & Access Log)';
           document.getElementById('sheetLink').innerHTML = '';
           document.getElementById('sheetLink').appendChild(a);
         }).catch(() => {});
