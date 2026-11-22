@@ -1,5 +1,5 @@
 // Replace with your deployed Google Apps Script Web App URL:
-const API_URL = 'https://script.google.com/a/macros/globe.com.ph/s/AKfycbz5I56zVUtPUkjfgfyiDIM6FXgUloaBN2KmCICK0sgIVJoyuoEsONJeHy8wHLDtPgzH/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbz5I56zVUtPUkjfgfyiDIM6FXgUloaBN2KmCICK0sgIVJoyuoEsONJeHy8wHLDtPgzH/exec';
 
 const ALLOWED_ZONE = {
   label: 'SM City Batangas Premises & Parking Lots (Pallocan Kanluran, Batangas City)',
