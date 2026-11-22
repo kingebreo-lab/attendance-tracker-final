@@ -35,7 +35,8 @@ function isTransientNetworkError(err) {
 
 // Connects standalone frontend to Google Apps Script Web App API
 async function runAppsScript(methodName, args = [], maxRetries = 2) {
-  if (!API_URL || API_URL.includes('PASTE_YOUR_GOOGLE_APPS_SCRIPT')) {
+  const cleanUrl = String(API_URL || '').trim();
+  if (!cleanUrl || cleanUrl.includes('PASTE_YOUR_GOOGLE_APPS_SCRIPT')) {
     throw new Error('Backend API_URL is not configured in app.js.');
   }
 
@@ -43,8 +44,11 @@ async function runAppsScript(methodName, args = [], maxRetries = 2) {
   while (true) {
     attempt++;
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetch(cleanUrl, {
         method: 'POST',
+        mode: 'cors',
+        redirect: 'follow',
+        cache: 'no-store',
         // text/plain prevents CORS preflight OPTIONS errors with Google Apps Script
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: methodName, args: args })
@@ -54,7 +58,14 @@ async function runAppsScript(methodName, args = [], maxRetries = 2) {
         throw new Error('Server error (HTTP ' + response.status + ')');
       }
 
-      const json = await response.json();
+      const rawText = await response.text();
+      let json;
+      try {
+        json = JSON.parse(rawText);
+      } catch (parseErr) {
+        throw new Error('Apps Script returned an HTML page instead of JSON. Ensure Web App access is set to "Anyone" and republished as a New Version.');
+      }
+
       if (!json.ok) {
         throw new Error(json.error || 'Unknown server error.');
       }
@@ -72,8 +83,8 @@ async function runAppsScript(methodName, args = [], maxRetries = 2) {
 
 function friendlyErrorMessage(err) {
   const raw = (err && err.message) ? err.message : String(err || '');
-  if (raw.includes('Failed to fetch') || raw.includes('NetworkError')) {
-    return 'Unable to reach the attendance server. Please check your internet connection and try again.';
+  if (raw.includes('Failed to fetch') || raw.includes('NetworkError') || raw.includes('Load failed')) {
+    return 'Unable to reach the attendance server. Check your internet connection, disable ad/tracker blockers (e.g., Brave Shields), or verify your Apps Script deployment is set to "Anyone".';
   }
   return raw;
 }
