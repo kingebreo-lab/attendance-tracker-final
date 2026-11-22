@@ -7,7 +7,7 @@ const CONFIG = {
   SELFIE_RETENTION_DAYS: 30,
   // Store your actual key in Project Settings > Script Properties as GEMINI_API_KEY
   GEMINI_API_KEY: '',
-  GEMINI_MODELS: ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash'],
+  GEMINI_MODELS: ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.5-flash'],
   ENFORCE_AI_SELFIE_CHECK: true,
   ALLOWED_LOCATION_LABEL: 'SM City Batangas Premises & Parking Lots (Pallocan Kanluran, Batangas City)',
   ALLOWED_CENTER_LAT: 13.7554,
@@ -706,7 +706,6 @@ function submitAttendance(form) {
   }
 }
 
-// Strictly returns ONLY the authenticated employee's own records
 function getEmployeeDashboard(employeeId, employeePin, month) {
   const employee = lookupEmployeeWithPin_(employeeId, employeePin);
   if (!employee.found) throw new Error(employee.message);
