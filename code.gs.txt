@@ -2,6 +2,7 @@ const CONFIG = {
   SPREADSHEET_ID: '',
   SHEET_NAME: 'Attendance',
   EMPLOYEES_SHEET_NAME: 'Employees',
+  ACCESS_LOG_SHEET_NAME: 'Dashboard Access Log',
   SELFIE_FOLDER_ID: '',
   SELFIE_FOLDER_NAME: 'Attendance Selfies',
   SELFIE_RETENTION_DAYS: 30,
@@ -98,9 +99,24 @@ function setup() {
   employees.setFrozenRows(1);
   employees.autoResizeColumns(1, 4);
 
+  ensureAccessLogSheet_(ss);
+
   getSelfieFolder_();
   ensureCleanupTrigger_();
   return ss.getUrl();
+}
+
+function ensureAccessLogSheet_(ss) {
+  let logSheet = ss.getSheetByName(CONFIG.ACCESS_LOG_SHEET_NAME);
+  if (!logSheet) logSheet = ss.insertSheet(CONFIG.ACCESS_LOG_SHEET_NAME);
+  const logHeaders = ['Checked At', 'Employee ID', 'Employee Name', 'Month Viewed', 'Records Found', 'Total Hours Worked'];
+  if (logSheet.getLastRow() === 0) {
+    logSheet.appendRow(logHeaders);
+    logSheet.getRange(1, 1, 1, logHeaders.length).setFontWeight('bold');
+    logSheet.setFrozenRows(1);
+    logSheet.autoResizeColumns(1, logHeaders.length);
+  }
+  return logSheet;
 }
 
 // ==========================================
@@ -755,13 +771,21 @@ function submitAttendance(form) {
   }
 }
 
+function formatMinutesAsHours_(mins) {
+  const m = Math.max(0, Math.round(Number(mins) || 0));
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return h + ':' + String(rem).padStart(2, '0');
+}
+
 function getEmployeeDashboard(employeeId, employeePin, month) {
   const employee = lookupEmployeeWithPin_(employeeId, employeePin);
   if (!employee.found) throw new Error(employee.message);
 
   const verifiedId = employee.employeeId.toUpperCase();
   const wantedMonth = String(month || Utilities.formatDate(new Date(), CONFIG.TIME_ZONE, 'yyyy-MM'));
-  const sheet = getSpreadsheet_().getSheetByName(CONFIG.SHEET_NAME);
+  const ss = getSpreadsheet_();
+  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
   const data = sheet.getDataRange().getDisplayValues();
   const records = [];
   let present = 0, early = 0, totalMinutes = 0;
@@ -774,11 +798,12 @@ function getEmployeeDashboard(employeeId, employeePin, month) {
     if (rowEmpId !== verifiedId || rowMonth !== wantedMonth) continue;
 
     const earlyMin = earlyMinutes_(r[5]);
+    const workedMin = (r[4] && r[5]) ? calculateWorkedMinutes_(r[4], r[5], r[0]) : 0;
+
     if (r[4]) present++;
     if (earlyMin > 0) early++;
-    if (r[4] && r[5]) {
-      totalMinutes += calculateWorkedMinutes_(r[4], r[5], r[0]);
-    }
+    totalMinutes += workedMin;
+
     records.push({
       date: r[0],
       employeeId: r[1] || employee.employeeId,
@@ -786,6 +811,7 @@ function getEmployeeDashboard(employeeId, employeePin, month) {
       role: r[3],
       timeIn: r[4],
       timeOut: r[5],
+      workedHours: (r[4] && r[5]) ? formatMinutesAsHours_(workedMin) : '—',
       remarks: r[6],
       timeInLocation: r[9] || '',
       timeOutLocation: r[11] || '',
@@ -797,11 +823,28 @@ function getEmployeeDashboard(employeeId, employeePin, month) {
   records.sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const today = Utilities.formatDate(new Date(), CONFIG.TIME_ZONE, 'yyyy-MM-dd');
   const todayRec = records.find(x => x.date === today);
-  const hours = Math.floor(totalMinutes / 60), mins = totalMinutes % 60;
-  const summary = { present, early, totalHours: hours + ':' + String(mins).padStart(2, '0') };
+  const summary = { present, early, totalHours: formatMinutesAsHours_(totalMinutes) };
 
+  // Record this dashboard check in the master spreadsheet's "Dashboard Access Log" sheet
   try {
-    syncPersonalEmployeeSheet_(employee, wantedMonth, summary, records);
+    const logSheet = ensureAccessLogSheet_(ss);
+    const checkedAt = Utilities.formatDate(new Date(), CONFIG.TIME_ZONE, 'yyyy-MM-dd HH:mm:ss');
+    logSheet.appendRow([
+      checkedAt,
+      employee.employeeId,
+      employee.employeeName,
+      wantedMonth,
+      records.length,
+      summary.totalHours
+    ]);
+  } catch (logErr) {
+    console.warn('Dashboard access log skipped:', logErr.message);
+  }
+
+  // Sync the employee's personal Google Sheet with their detailed daily time entries
+  let personalSheetUrl = '';
+  try {
+    personalSheetUrl = syncPersonalEmployeeSheet_(employee, wantedMonth, summary, records);
   } catch (syncErr) {
     console.warn('Personal sheet sync skipped:', syncErr.message);
   }
@@ -812,6 +855,7 @@ function getEmployeeDashboard(employeeId, employeePin, month) {
     month: wantedMonth,
     summary,
     today: todayRec || { status: 'No attendance yet' },
+    personalSheetUrl,
     records
   };
 }
@@ -836,10 +880,11 @@ function syncPersonalEmployeeSheet_(employee, month, summary, records) {
     props.setProperty(propKey, fileId);
     try {
       const file = DriveApp.getFileById(fileId);
-      file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     } catch (e) {}
   }
 
+  const checkedStamp = Utilities.formatDate(new Date(), CONFIG.TIME_ZONE, 'yyyy-MM-dd HH:mm:ss');
   const tabName = month;
   let sheet = ss.getSheetByName(tabName);
   if (!sheet) {
@@ -856,14 +901,26 @@ function syncPersonalEmployeeSheet_(employee, month, summary, records) {
     ['Employee Name', employee.employeeName, 'Month', month],
     ['Employee ID', employee.employeeId, 'Days Present', summary.present],
     ['Total Hours Worked', summary.totalHours, 'Early Out Days', summary.early],
-    ['', '', '', '']
+    ['Last Checked', checkedStamp, '', '']
   ];
   sheet.getRange(1, 1, summaryRows.length, 4).setValues(summaryRows);
-  sheet.getRange('A1:A3').setFontWeight('bold');
+  sheet.getRange('A1:A4').setFontWeight('bold');
   sheet.getRange('C1:C3').setFontWeight('bold');
 
-  const headers = ['Date', 'Employee ID', 'Employee Name', 'Role', 'Time In', 'Time Out', 'In Location', 'Out Location', 'Remarks'];
-  sheet.getRange(5, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+  const headers = [
+    'Date',
+    'Employee ID',
+    'Employee Name',
+    'Role',
+    'Time In',
+    'Time Out',
+    'Worked Hours',
+    'Early Out (mins)',
+    'In Location',
+    'Out Location',
+    'Remarks'
+  ];
+  sheet.getRange(6, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
 
   if (records.length > 0) {
     const rows = records.map(r => [
@@ -873,11 +930,13 @@ function syncPersonalEmployeeSheet_(employee, month, summary, records) {
       r.role || '',
       r.timeIn || '',
       r.timeOut || '',
+      r.workedHours || '—',
+      r.earlyMinutes || 0,
       r.timeInLocation || '',
       r.timeOutLocation || '',
       r.remarks || ''
     ]);
-    sheet.getRange(6, 1, rows.length, headers.length).setValues(rows);
+    sheet.getRange(7, 1, rows.length, headers.length).setValues(rows);
   }
 
   sheet.autoResizeColumns(1, headers.length);
@@ -946,17 +1005,21 @@ function getResponses(adminPin) {
   if (String(adminPin || '') !== CONFIG.ADMIN_PIN) throw new Error('Incorrect administrator PIN.');
   const values = getSpreadsheet_().getSheetByName(CONFIG.SHEET_NAME).getDataRange().getDisplayValues();
   if (values.length <= 1) return [];
-  return values.slice(1).reverse().map(r => ({
-    date: r[0],
-    employeeId: r[1],
-    employeeName: r[2],
-    role: r[3],
-    timeIn: r[4],
-    timeOut: r[5],
-    remarks: r[6],
-    timeInLocation: r[9] || '',
-    timeOutLocation: r[11] || ''
-  }));
+  return values.slice(1).reverse().map(r => {
+    const workedMin = (r[4] && r[5]) ? calculateWorkedMinutes_(r[4], r[5], r[0]) : 0;
+    return {
+      date: r[0],
+      employeeId: r[1],
+      employeeName: r[2],
+      role: r[3],
+      timeIn: r[4],
+      timeOut: r[5],
+      workedHours: (r[4] && r[5]) ? formatMinutesAsHours_(workedMin) : '—',
+      remarks: r[6],
+      timeInLocation: r[9] || '',
+      timeOutLocation: r[11] || ''
+    };
+  });
 }
 
 function getSpreadsheetUrl(adminPin) {
@@ -971,13 +1034,19 @@ function getEmployeesList(adminPin) {
   const sheet = getSpreadsheet_().getSheetByName(CONFIG.EMPLOYEES_SHEET_NAME);
   if (!sheet || sheet.getLastRow() <= 1) return [];
 
+  const props = PropertiesService.getScriptProperties();
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getDisplayValues();
-  return values.map(r => ({
-    employeeId: r[0],
-    employeeName: r[1],
-    active: r[2] || 'YES',
-    employeePin: r[3] || ''
-  }));
+  return values.map(r => {
+    const empId = String(r[0] || '').trim();
+    const sheetId = props.getProperty('PERSONAL_SHEET_' + empId.toUpperCase());
+    return {
+      employeeId: empId,
+      employeeName: r[1],
+      active: r[2] || 'YES',
+      employeePin: r[3] || '',
+      personalSheetUrl: sheetId ? ('https://docs.google.com/spreadsheets/d/' + sheetId) : ''
+    };
+  });
 }
 
 function addNewEmployee(adminPin, employeeData) {
