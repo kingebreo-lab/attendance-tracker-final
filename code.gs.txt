@@ -269,6 +269,7 @@ function isWithinAllowedArea_(lat, lng, accuracy, resolvedAddress) {
 
 // ==========================================
 // FAST GEMINI AI PERSON VERIFICATION
+// (WITH AUTO-MODEL DISCOVERY)
 // ==========================================
 
 function getGeminiKey_() {
@@ -291,6 +292,57 @@ function getGeminiKey_() {
   return '';
 }
 
+function getAvailableGeminiModels_(apiKey) {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('ACTIVE_GEMINI_MODELS_V1');
+  if (cached) {
+    try {
+      const list = JSON.parse(cached);
+      if (Array.isArray(list) && list.length) return list;
+    } catch (e) {}
+  }
+
+  const fallbackList = Array.isArray(CONFIG.GEMINI_MODELS) && CONFIG.GEMINI_MODELS.length
+    ? CONFIG.GEMINI_MODELS
+    : ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+
+  try {
+    const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+      method: 'get',
+      headers: { 'x-goog-api-key': apiKey },
+      muteHttpExceptions: true
+    });
+
+    if (res.getResponseCode() === 200) {
+      const json = JSON.parse(res.getContentText());
+      const models = (json.models || [])
+        .filter(m =>
+          Array.isArray(m.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes('generateContent') &&
+          String(m.name || '').includes('gemini') &&
+          !String(m.name || '').includes('embedding') &&
+          !String(m.name || '').includes('image') &&
+          !String(m.name || '').includes('tts') &&
+          !String(m.name || '').includes('robotics')
+        )
+        .map(m => String(m.name).replace(/^models\//, ''));
+
+      if (models.length) {
+        const flashLite = models.filter(n => n.includes('flash-lite'));
+        const flash = models.filter(n => n.includes('flash') && !n.includes('flash-lite'));
+        const others = models.filter(n => !n.includes('flash'));
+        const prioritized = [...new Set([...fallbackList, ...flashLite, ...flash, ...others])];
+        cache.put('ACTIVE_GEMINI_MODELS_V1', JSON.stringify(prioritized), 3600);
+        return prioritized;
+      }
+    }
+  } catch (e) {
+    console.warn('Model discovery fallback used:', e.message);
+  }
+
+  return fallbackList;
+}
+
 function computeSelfieHash_(base64Body) {
   const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, base64Body);
   return digest.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
@@ -300,10 +352,7 @@ function callGeminiFast_(parts, responseMimeType) {
   const apiKey = getGeminiKey_();
   if (!apiKey) return null;
 
-  const models = Array.isArray(CONFIG.GEMINI_MODELS) && CONFIG.GEMINI_MODELS.length
-    ? CONFIG.GEMINI_MODELS
-    : ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
-
+  const models = getAvailableGeminiModels_(apiKey);
   let lastError = '';
 
   for (let m = 0; m < models.length; m++) {
