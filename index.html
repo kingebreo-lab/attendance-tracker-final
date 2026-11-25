@@ -29,19 +29,20 @@
       min-height: 100vh;
     }
     /* Faint tiled logo watermark background */
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      /* Replace 'globe-logo.png' below with your direct PNG/SVG file path or direct image URL */
-      background-image: url("ezgif.com/image-to-datauri](https://ezgif.com/image-to-datauri");
-      background-repeat: repeat;
-      background-size: 130px auto;
-      opacity: 0.045;
-      filter: grayscale(100%);
-    }
+    /* Faint tiled Globe Telecom logo watermark */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* Paste your Base64 data URI (data:image/png;base64,...) OR use "globe-logo.png" if saved in the same folder */
+  background-image: url("PASTE_YOUR_BASE64_STRING_OR_globe-logo.png_HERE");
+  background-repeat: repeat;
+  background-size: 140px auto;
+  opacity: 0.05;
+  filter: grayscale(100%);
+}
     header, main {
       position: relative;
       z-index: 1;
