@@ -7,6 +7,7 @@
   <link rel="icon" type="image/png" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTaQSEGjNOPlptbMJLzk9N7K0mqsl-rITW9Jd_sOH34pkaMro6wYcjX128&s=10">
   <link rel="shortcut icon" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTaQSEGjNOPlptbMJLzk9N7K0mqsl-rITW9Jd_sOH34pkaMro6wYcjX128&s=10">
   <link rel="apple-touch-icon" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTaQSEGjNOPlptbMJLzk9N7K0mqsl-rITW9Jd_sOH34pkaMro6wYcjX128&s=10">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     :root {
       --ink: #182230;
@@ -19,7 +20,7 @@
       --amber: #92400e;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-   body {
+    body {
       margin: 0;
       background-color: var(--bg);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='140' viewBox='0 0 200 140'%3E%3Cg transform='translate(20, 42)' opacity='0.11'%3E%3Ccircle cx='30' cy='30' r='26' fill='none' stroke='%232457d6' stroke-width='3.5'/%3E%3Cellipse cx='30' cy='30' rx='13' ry='26' fill='none' stroke='%232457d6' stroke-width='3'/%3E%3Cpath d='M6 20 Q30 32 54 20' fill='none' stroke='%232457d6' stroke-width='3'/%3E%3Cpath d='M6 40 Q30 28 54 40' fill='none' stroke='%232457d6' stroke-width='3'/%3E%3Ctext x='66' y='40' font-family='Arial, Helvetica, sans-serif' font-weight='700' font-size='28' fill='%232457d6'%3EGlobe%3C/text%3E%3C/g%3E%3C/svg%3E");
@@ -30,12 +31,35 @@
       -webkit-text-size-adjust: 100%;
       min-height: 100vh;
     }
-    header { background: #14233b; color: #fff; padding: 22px 16px; }
-    header .wrap, main { max-width: 1100px; margin: auto; }
+    header { background: #14233b; color: #fff; padding: 20px 16px; }
+    header .wrap {
+      max-width: 1100px;
+      margin: auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    main { max-width: 1100px; margin: auto; padding: 16px 14px 48px; }
     h1 { margin: 0 0 4px; font-size: 24px; line-height: 1.25; }
     h2 { margin: 0 0 6px; font-size: 20px; }
     header p { margin: 0; color: #cbd5e1; font-size: 14px; }
-    main { padding: 16px 14px 48px; }
+    .header-qr-btn {
+      background: rgba(255, 255, 255, 0.14);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 10px;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.2s ease;
+    }
+    .header-qr-btn:hover { background: rgba(255, 255, 255, 0.24); }
     .tabs {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -195,6 +219,98 @@
     .search-bar-row input[type="date"] { flex: 0 1 170px; min-height: 42px; padding: 9px 12px; font-size: 14px; }
     .search-bar-row .mini-btn { min-height: 42px; padding: 0 14px; font-size: 13px; }
 
+    /* QR Code Card & Modal */
+    .qr-poster-box {
+      max-width: 380px;
+      margin: 16px auto;
+      background: #fff;
+      border: 2px solid #cbd5e1;
+      border-radius: 18px;
+      padding: 24px 20px;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+    .qr-poster-box h3 { margin: 0 0 4px; font-size: 18px; color: #14233b; }
+    .qr-poster-box p { margin: 0 0 16px; font-size: 13px; color: var(--muted); }
+    .qr-frame {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+      background: #fff;
+      border: 2px solid #e2e8f0;
+      border-radius: 14px;
+    }
+    .qr-frame img, .qr-frame canvas { display: block; max-width: 100%; height: auto; }
+    .qr-url-label {
+      margin-top: 12px;
+      font-size: 11px;
+      color: #475569;
+      word-break: break-all;
+      background: #f8fafc;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    .qr-btn-row {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+    .qr-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(3px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .qr-modal-card {
+      background: #fff;
+      border-radius: 20px;
+      max-width: 400px;
+      width: 100%;
+      padding: 22px;
+      text-align: center;
+      position: relative;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+    }
+    .qr-close-btn {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    @media print {
+      body * { visibility: hidden; }
+      #printableQrArea, #printableQrArea * { visibility: visible; }
+      #printableQrArea {
+        position: fixed;
+        inset: 0;
+        margin: auto;
+        border: 2px solid #14233b;
+        box-shadow: none;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .no-print { display: none !important; }
+    }
+
     @media (max-width: 700px) {
       header { padding: 18px 14px; }
       h1 { font-size: 21px; }
@@ -225,8 +341,14 @@
 <body>
   <header>
     <div class="wrap">
-      <h1>Employee Attendance Tracker</h1>
-      <p>SM City Batangas • Pallocan Kanluran, Batangas City</p>
+      <div>
+        <h1>Employee Attendance Tracker</h1>
+        <p>SM City Batangas • Pallocan Kanluran, Batangas City</p>
+      </div>
+      <button type="button" class="header-qr-btn" onclick="openQrModal()">
+        <span>📱</span>
+        <span>Attendance QR</span>
+      </button>
     </div>
   </header>
 
@@ -408,6 +530,7 @@
         <div class="sub-tabs">
           <button type="button" class="sub-tab active" id="subTabLogs" onclick="switchAdminView('logs')">Attendance Logs</button>
           <button type="button" class="sub-tab" id="subTabEmployees" onclick="switchAdminView('employees')">Manage Employees</button>
+          <button type="button" class="sub-tab" id="subTabQr" onclick="switchAdminView('qr')">Attendance QR</button>
           <button type="button" class="sub-tab" id="subTabServer" onclick="switchAdminView('server')">Server Settings</button>
         </div>
 
@@ -504,9 +627,23 @@
             </table>
           </div>
         </div>
+
+        <!-- View 3: Attendance QR Code Poster -->
+        <div id="adminQrView" class="hidden">
+          <div class="qr-poster-box" id="printableQrArea">
+            <h3>Employee Attendance Tracker</h3>
+            <p>SM City Batangas • Scan to Time In / Time Out</p>
+            <div class="qr-frame" id="adminQrCodeContainer"></div>
+            <div class="qr-url-label" id="adminQrUrlText">https://kingebreo-lab.github.io/attendance-tracker-final/</div>
+            <div class="qr-btn-row no-print">
+              <button type="button" class="primary" style="min-height:40px;padding:8px 16px;font-size:13px" onclick="downloadQrPng('adminQrCodeContainer')">Download PNG</button>
+              <button type="button" class="secondary" style="min-height:40px;padding:8px 16px;font-size:13px" onclick="window.print()">Print Poster</button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- View 3: Server Settings (Admin Tab Only - auto-shows if URL is unconfigured) -->
+      <!-- View 4: Server Settings (Admin Tab Only - auto-shows if URL is unconfigured) -->
       <div id="adminServerView" class="hidden">
         <div id="apiSetupBar" class="setup-bar">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
@@ -524,9 +661,76 @@
     </section>
   </main>
 
+  <!-- Quick QR Code Modal (Accessible from Header) -->
+  <div id="qrModal" class="qr-modal-backdrop hidden" onclick="if(event.target===this) closeQrModal()">
+    <div class="qr-modal-card">
+      <button type="button" class="qr-close-btn" onclick="closeQrModal()">✕ Close</button>
+      <h3 style="margin:0 0 4px;font-size:18px;color:#14233b">Scan Attendance QR</h3>
+      <p class="muted" style="margin:0 0 14px">SM City Batangas • Open on Mobile Browser</p>
+      <div class="qr-frame" id="modalQrCodeContainer"></div>
+      <div class="qr-url-label" id="modalQrUrlText">https://kingebreo-lab.github.io/attendance-tracker-final/</div>
+      <div class="qr-btn-row">
+        <button type="button" class="primary" style="min-height:40px;padding:8px 16px;font-size:13px" onclick="downloadQrPng('modalQrCodeContainer')">Download PNG</button>
+        <button type="button" class="secondary" style="min-height:40px;padding:8px 16px;font-size:13px" onclick="copyTrackerUrl(this)">Copy Link</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // PASTE YOUR GOOGLE APPS SCRIPT /exec URL INSIDE THE QUOTES BELOW:
     const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbz5I56zVUtPUkjfgfyiDIM6FXgUloaBN2KmCICK0sgIVJoyuoEsONJeHy8wHLDtPgzH/exec';
+    const TRACKER_PUBLIC_URL = 'https://kingebreo-lab.github.io/attendance-tracker-final/';
+
+    function renderQrInto(containerId, size) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.innerHTML = '';
+      if (typeof QRCode === 'undefined') {
+        container.textContent = 'QR library loading...';
+        return;
+      }
+      new QRCode(container, {
+        text: TRACKER_PUBLIC_URL,
+        width: size,
+        height: size,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.H
+      });
+    }
+
+    function openQrModal() {
+      renderQrInto('modalQrCodeContainer', 220);
+      document.getElementById('modalQrUrlText').textContent = TRACKER_PUBLIC_URL;
+      document.getElementById('qrModal').classList.remove('hidden');
+    }
+
+    function closeQrModal() {
+      document.getElementById('qrModal').classList.add('hidden');
+    }
+
+    function downloadQrPng(containerId) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const canvas = container.querySelector('canvas');
+      const img = container.querySelector('img');
+      const dataUrl = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
+      if (!dataUrl) return;
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = 'SM-Batangas-Attendance-QR.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    function copyTrackerUrl(btn) {
+      navigator.clipboard.writeText(TRACKER_PUBLIC_URL).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      });
+    }
 
     function getActiveApiUrl() {
       const saved = String(localStorage.getItem('ATTENDANCE_API_URL') || '').trim();
@@ -1401,11 +1605,17 @@
     function switchAdminView(view) {
       document.getElementById('adminLogsView').classList.toggle('hidden', view !== 'logs');
       document.getElementById('adminEmployeesView').classList.toggle('hidden', view !== 'employees');
+      document.getElementById('adminQrView').classList.toggle('hidden', view !== 'qr');
       document.getElementById('adminServerView').classList.toggle('hidden', view !== 'server');
       document.getElementById('subTabLogs').classList.toggle('active', view === 'logs');
       document.getElementById('subTabEmployees').classList.toggle('active', view === 'employees');
+      document.getElementById('subTabQr').classList.toggle('active', view === 'qr');
       document.getElementById('subTabServer').classList.toggle('active', view === 'server');
 
+      if (view === 'qr') {
+        renderQrInto('adminQrCodeContainer', 240);
+        document.getElementById('adminQrUrlText').textContent = TRACKER_PUBLIC_URL;
+      }
       if (view === 'server') {
         document.getElementById('apiUrlInput').value = getActiveApiUrl();
       }
