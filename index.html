@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Employee Attendance Tracker • SM City Batangas</title>
-  <link rel="icon" type="image/png" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTaQSEGjNOPlptbMJLzk9N7K0mqsl-rITW9Jd_sOH34pkaMro6wYcjX128&s=10">
-  <link rel="shortcut icon" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTaQSEGjNOPlptbMJLzk9N7K0mqsl-rITW9Jd_sOH34pkaMro6wYcjX128&s=10">
-  <link rel="apple-touch-icon" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTaQSEGjNOPlptbMJLzk9N7K0mqsl-rITW9Jd_sOH34pkaMro6wYcjX128&s=10">
+  <link rel="icon" type="image/png" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRmkpgS4CgnrFTTmMHUuJJVPjaQl6VwzDWzW2s3J-MvY2iPr2ByRQlJoX6y&s=10">
+  <link rel="shortcut icon" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRmkpgS4CgnrFTTmMHUuJJVPjaQl6VwzDWzW2s3J-MvY2iPr2ByRQlJoX6y&s=10">
+  <link rel="apple-touch-icon" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRmkpgS4CgnrFTTmMHUuJJVPjaQl6VwzDWzW2s3J-MvY2iPr2ByRQlJoX6y&s=10">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     :root {
@@ -1034,7 +1034,6 @@
 
       try {
         stopCameraStream();
-        // iOS Safari requires simple constraints without strict width/ideal conflicts
         const constraints = IS_IOS
           ? { video: { facingMode: 'user' }, audio: false }
           : { video: { facingMode: { ideal: 'user' }, width: { ideal: 480 } }, audio: false };
@@ -1126,7 +1125,6 @@
 
       try {
         let dataUrl = '';
-        // iOS Safari sometimes throws on createImageBitmap for large camera photos; try objectURL/Image first on iOS
         if (IS_IOS) {
           dataUrl = await loadViaObjectUrl(file);
         } else if (window.createImageBitmap) {
@@ -1290,13 +1288,13 @@
     function formatGeolocationError(err) {
       if (!err) return 'Unable to detect GPS location.';
       switch (err.code) {
-        case 1: // PERMISSION_DENIED
+        case 1:
           return IS_IOS
             ? 'Location permission blocked. On iPhone: open Settings > Privacy & Security > Location Services > Safari Websites (set to "While Using"), or tap "aA" in Safari address bar > Website Settings > Location > Allow.'
             : 'Location permission denied. Enable Location in browser site settings and tap "Verify / Recalibrate GPS".';
-        case 2: // POSITION_UNAVAILABLE
+        case 2:
           return 'GPS signal unavailable indoors. Turn on Wi-Fi on your phone (improves indoor location) and tap "Verify / Recalibrate GPS".';
-        case 3: // TIMEOUT
+        case 3:
           return 'GPS lock timed out. Turn on Wi-Fi, move near an entrance/window if needed, and tap "Verify / Recalibrate GPS".';
         default:
           return err.message || 'Location access unavailable.';
@@ -1390,7 +1388,6 @@
       );
     }
 
-    // Sequential getCurrentPosition -> watchPosition avoids iOS CoreLocation race/timeout bugs
     function startSmoothLocationTracker(forceReset) {
       const pill = document.getElementById('locationStatus');
       if (!navigator.geolocation) {
@@ -1415,7 +1412,6 @@
           beginWatchPositionOnly();
         },
         err => {
-          // If high-accuracy timed out on iOS indoors, retry with standard Wi-Fi/cell accuracy first
           if (err && err.code === 3) {
             navigator.geolocation.getCurrentPosition(
               pos2 => {
@@ -1452,7 +1448,6 @@
 
     async function autoStartLocationIfPermitted() {
       if (!navigator.geolocation) return;
-      // On iOS Safari, avoid silent auto-prompting without user tap if permission is still 'prompt'
       if (IS_IOS && navigator.permissions && navigator.permissions.query) {
         try {
           const perm = await navigator.permissions.query({ name: 'geolocation' });
