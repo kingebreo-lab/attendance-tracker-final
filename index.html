@@ -144,6 +144,14 @@
       font-size: 14px;
     }
     .hidden { display: none !important; }
+    .visually-hidden-input {
+      position: fixed;
+      top: -9999px;
+      left: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
     .dash-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
     .dash-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
     .summary-grid {
@@ -177,7 +185,7 @@
       margin: 8px auto 0;
     }
     .cam-frame video, .cam-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .cam-frame video { transform: scaleX(-1); }
+    .cam-frame video { transform: scaleX(-1); -webkit-transform: scaleX(-1); }
     .cam-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .cam-actions .secondary { flex: 1 1 auto; text-align: center; }
     .loc-pill {
@@ -354,7 +362,7 @@
 
   <main>
     <div id="inAppBrowserBanner" class="warning-banner hidden">
-      <strong>Tip:</strong> You appear to be using an in-app browser (Messenger / Facebook / Viber), which can block camera or GPS permissions. For best results, tap the menu icon (<strong>⋮</strong> or <strong>•••</strong>) and select <strong>Open in Chrome</strong> or <strong>Open in Safari</strong>.
+      <strong>Tip:</strong> You appear to be using an in-app browser (Messenger / Facebook / Viber), which can block camera or GPS permissions on iPhone &amp; Android. Tap the menu icon (<strong>•••</strong> or <strong>⋮</strong>) and choose <strong>Open in Safari</strong> or <strong>Open in Chrome</strong>.
     </div>
 
     <div class="tabs">
@@ -403,11 +411,12 @@
             <label>Live Person Selfie Verification *</label>
             <p id="camStatus" class="hint" style="margin:0">Tap "Open Front Camera" to capture your live selfie.</p>
             <div class="cam-frame hidden" id="camFrame">
-              <video id="cameraVideo" autoplay playsinline muted></video>
+              <video id="cameraVideo" autoplay playsinline webkit-playsinline muted></video>
               <img id="selfiePreview" class="hidden" alt="Captured selfie">
             </div>
             <canvas id="selfieCanvas" class="hidden"></canvas>
-            <input type="file" id="nativeCamInput" accept="image/*" capture="user" class="hidden" onchange="handleNativeSelfie(event)">
+            <!-- JPEG-preferred accept triggers native iOS Safari transcoding from HEIC to JPEG -->
+            <input type="file" id="nativeCamInput" accept="image/jpeg,image/png,image/*" capture="user" class="visually-hidden-input" onchange="handleNativeSelfie(event)">
             <div class="cam-actions">
               <button type="button" class="secondary" id="nativeCamBtn" onclick="openNativeCamera()">Open Front Camera</button>
               <button type="button" class="secondary" id="retryCamBtn" onclick="startCamera(false)">Use Live Preview</button>
@@ -419,13 +428,13 @@
           <div class="verify-box">
             <label>Geofenced Location Check *</label>
             <p class="hint" style="margin:0">Allowed zone: <strong>SM City Batangas Premises &amp; Parking Lots</strong>.</p>
-            <div id="locationStatus" class="loc-pill"><span class="pulse-dot"></span><span>Locking onto location...</span></div>
+            <div id="locationStatus" class="loc-pill"><span class="pulse-dot"></span><span>Waiting for GPS permission...</span></div>
             <div id="locationDetails" class="addr-box hidden">
               <strong id="locationAddress">SM City Batangas, Pallocan Kanluran, Batangas City</strong>
               <small id="locationCoords"></small>
             </div>
             <div class="cam-actions">
-              <button type="button" class="secondary" onclick="refreshLocation(true)">Recalibrate GPS</button>
+              <button type="button" class="secondary" id="gpsTriggerBtn" onclick="requestLocationFromUserTap()">Verify / Recalibrate GPS</button>
             </div>
           </div>
 
@@ -677,9 +686,11 @@
   </div>
 
   <script>
-    // PASTE YOUR GOOGLE APPS SCRIPT /exec URL INSIDE THE QUOTES BELOW:
     const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbz5I56zVUtPUkjfgfyiDIM6FXgUloaBN2KmCICK0sgIVJoyuoEsONJeHy8wHLDtPgzH/exec';
     const TRACKER_PUBLIC_URL = 'https://kingebreo-lab.github.io/attendance-tracker-final/';
+
+    const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     function renderQrInto(containerId, size) {
       const container = document.getElementById(containerId);
@@ -909,7 +920,7 @@
     function friendlyErrorMessage(err) {
       const raw = (err && err.message) ? err.message : String(err || '');
       if (raw.includes('Failed to fetch') || raw.includes('NetworkError') || raw.includes('Load failed')) {
-        return 'Browser blocked the connection to Google Apps Script. Disable ad/tracker blockers (Brave Shields/uBlock) for this site, or verify your Apps Script deployment is set to "Anyone" under a New Version.';
+        return 'Browser blocked the connection to Google Apps Script. Disable ad/tracker blockers (Brave Shields/uBlock/Safari Content Blockers) for this site, or verify your Apps Script deployment is set to "Anyone".';
       }
       return raw;
     }
@@ -935,7 +946,7 @@
         stopCameraStream();
         stopLocationWatcher();
       } else {
-        startSmoothLocationTracker();
+        autoStartLocationIfPermitted();
       }
       if (which === 'responses' && !getActiveApiUrl()) {
         document.getElementById('adminServerView').classList.remove('hidden');
@@ -963,6 +974,10 @@
       if (mediaStream) {
         mediaStream.getTracks().forEach(t => t.stop());
         mediaStream = null;
+      }
+      const video = document.getElementById('cameraVideo');
+      if (video) {
+        video.srcObject = null;
       }
     }
 
@@ -1019,12 +1034,24 @@
 
       try {
         stopCameraStream();
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'user' }, width: { ideal: 320 } },
-          audio: false
-        });
+        // iOS Safari requires simple constraints without strict width/ideal conflicts
+        const constraints = IS_IOS
+          ? { video: { facingMode: 'user' }, audio: false }
+          : { video: { facingMode: { ideal: 'user' }, width: { ideal: 480 } }, audio: false };
+
+        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
         usingNativeCamera = false;
+
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+        video.muted = true;
         video.srcObject = mediaStream;
+
+        await new Promise((resolve) => {
+          if (video.readyState >= 1) resolve();
+          else video.onloadedmetadata = () => resolve();
+        });
+
         await video.play();
         camFrame.classList.remove('hidden');
         video.classList.remove('hidden');
@@ -1038,7 +1065,7 @@
         enableNativeCamera(
           silentFallback
             ? 'Tap "Open Front Camera" to take a live selfie.'
-            : 'Camera permission denied (' + (err.name || 'NotAllowedError') + '). Tap "Open Front Camera" to use your device camera.',
+            : 'Camera access blocked (' + (err.name || 'NotAllowedError') + '). Tap "Open Front Camera" to use your iPhone/Android camera.',
           !silentFallback
         );
       }
@@ -1055,6 +1082,40 @@
       document.getElementById('retryCamBtn').classList.remove('hidden');
     }
 
+    function drawImageSourceToCanvas(source, srcWidth, srcHeight) {
+      const canvas = document.getElementById('selfieCanvas');
+      const ctx = canvas.getContext('2d');
+      const maxW = 360;
+      const scale = Math.min(1, maxW / (srcWidth || maxW));
+      canvas.width = Math.max(1, Math.round((srcWidth || maxW) * scale));
+      canvas.height = Math.max(1, Math.round((srcHeight || maxW) * scale));
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.65);
+    }
+
+    function loadViaObjectUrl(file) {
+      return new Promise((resolve, reject) => {
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = function() {
+          try {
+            const dataUrl = drawImageSourceToCanvas(img, img.naturalWidth || img.width, img.naturalHeight || img.height);
+            URL.revokeObjectURL(objectUrl);
+            resolve(dataUrl);
+          } catch (e) {
+            URL.revokeObjectURL(objectUrl);
+            reject(e);
+          }
+        };
+        img.onerror = function() {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('Image decoding failed'));
+        };
+        img.src = objectUrl;
+      });
+    }
+
     async function handleNativeSelfie(event) {
       const file = event.target.files && event.target.files[0];
       if (!file) return;
@@ -1064,35 +1125,28 @@
       status.style.color = '#64748b';
 
       try {
-        const canvas = document.getElementById('selfieCanvas');
-        const ctx = canvas.getContext('2d');
-        const maxW = 320;
-
-        if (window.createImageBitmap) {
-          const bitmap = await createImageBitmap(file);
-          const scale = Math.min(1, maxW / bitmap.width);
-          canvas.width = Math.round(bitmap.width * scale);
-          canvas.height = Math.round(bitmap.height * scale);
-          ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-          bitmap.close();
-          finalizeSelfiePreview(canvas.toDataURL('image/jpeg', 0.55));
+        let dataUrl = '';
+        // iOS Safari sometimes throws on createImageBitmap for large camera photos; try objectURL/Image first on iOS
+        if (IS_IOS) {
+          dataUrl = await loadViaObjectUrl(file);
+        } else if (window.createImageBitmap) {
+          try {
+            const bitmap = await createImageBitmap(file);
+            dataUrl = drawImageSourceToCanvas(bitmap, bitmap.width, bitmap.height);
+            bitmap.close();
+          } catch (bitmapErr) {
+            dataUrl = await loadViaObjectUrl(file);
+          }
         } else {
-          const reader = new FileReader();
-          reader.onload = function(e) {
-            const img = new Image();
-            img.onload = function() {
-              const scale = Math.min(1, maxW / img.width);
-              canvas.width = Math.round(img.width * scale);
-              canvas.height = Math.round(img.height * scale);
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              finalizeSelfiePreview(canvas.toDataURL('image/jpeg', 0.55));
-            };
-            img.src = e.target.result;
-          };
-          reader.readAsDataURL(file);
+          dataUrl = await loadViaObjectUrl(file);
         }
+
+        if (!dataUrl || dataUrl.length < 100) {
+          throw new Error('Empty image generated');
+        }
+        finalizeSelfiePreview(dataUrl);
       } catch (err) {
-        status.textContent = 'Could not read image. Please tap "Open Front Camera" again.';
+        status.textContent = 'Could not process photo. On iPhone, set Settings > Camera > Formats to "Most Compatible" or tap "Use Live Preview".';
         status.style.color = '#991b1b';
       }
     }
@@ -1114,22 +1168,24 @@
 
     function captureSelfie() {
       const video = document.getElementById('cameraVideo');
-      if (!video.videoWidth) {
-        notice('formNotice', 'Live stream is not ready. Tap "Open Front Camera" instead.', false);
+      if (!video.videoWidth || !video.videoHeight) {
+        notice('formNotice', 'Live stream is still warming up. Wait 1 second or tap "Open Front Camera".', false);
         return;
       }
       const canvas = document.getElementById('selfieCanvas');
-      const maxW = 320;
+      const maxW = 360;
       const scale = Math.min(1, maxW / video.videoWidth);
       canvas.width = Math.round(video.videoWidth * scale);
       canvas.height = Math.round(video.videoHeight * scale);
 
       const ctx = canvas.getContext('2d');
+      ctx.save();
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
 
-      capturedSelfieData = canvas.toDataURL('image/jpeg', 0.55);
+      capturedSelfieData = canvas.toDataURL('image/jpeg', 0.65);
       stopCameraStream();
 
       const preview = document.getElementById('selfiePreview');
@@ -1161,6 +1217,10 @@
         startCamera(false);
       }
     }
+
+    // ==========================================
+    // iOS & ANDROID GEOLOCATION ENGINE
+    // ==========================================
 
     function getDistanceMeters(lat1, lng1, lat2, lng2) {
       const R = 6371000;
@@ -1227,6 +1287,22 @@
       }
     }
 
+    function formatGeolocationError(err) {
+      if (!err) return 'Unable to detect GPS location.';
+      switch (err.code) {
+        case 1: // PERMISSION_DENIED
+          return IS_IOS
+            ? 'Location permission blocked. On iPhone: open Settings > Privacy & Security > Location Services > Safari Websites (set to "While Using"), or tap "aA" in Safari address bar > Website Settings > Location > Allow.'
+            : 'Location permission denied. Enable Location in browser site settings and tap "Verify / Recalibrate GPS".';
+        case 2: // POSITION_UNAVAILABLE
+          return 'GPS signal unavailable indoors. Turn on Wi-Fi on your phone (improves indoor location) and tap "Verify / Recalibrate GPS".';
+        case 3: // TIMEOUT
+          return 'GPS lock timed out. Turn on Wi-Fi, move near an entrance/window if needed, and tap "Verify / Recalibrate GPS".';
+        default:
+          return err.message || 'Location access unavailable.';
+      }
+    }
+
     function applyLocationReading(pos) {
       const pill = document.getElementById('locationStatus');
       const details = document.getElementById('locationDetails');
@@ -1268,7 +1344,7 @@
         pill.className = 'loc-pill ok';
         addrEl.textContent = currentLocation.address;
       } else {
-        const stillWarmingUp = (Date.now() - watchStartedAt < 3500) && accuracy > 150;
+        const stillWarmingUp = (Date.now() - watchStartedAt < 4500) && accuracy > 150;
         if (stillWarmingUp) {
           pill.innerHTML = '<span class="pulse-dot"></span><span>Refining indoor GPS signal...</span>';
           pill.className = 'loc-pill warn';
@@ -1295,6 +1371,26 @@
       return currentLocation;
     }
 
+    function beginWatchPositionOnly() {
+      if (!navigator.geolocation || locationWatchId !== null) return;
+      locationWatchId = navigator.geolocation.watchPosition(
+        pos => applyLocationReading(pos),
+        err => {
+          if (!currentLocation) {
+            const pill = document.getElementById('locationStatus');
+            const details = document.getElementById('locationDetails');
+            pill.textContent = err && err.code === 1 ? 'Location permission denied' : 'GPS signal weak / timed out';
+            pill.className = 'loc-pill err';
+            details.classList.remove('hidden');
+            document.getElementById('locationAddress').textContent = 'Location Verification Required';
+            document.getElementById('locationCoords').textContent = formatGeolocationError(err);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 }
+      );
+    }
+
+    // Sequential getCurrentPosition -> watchPosition avoids iOS CoreLocation race/timeout bugs
     function startSmoothLocationTracker(forceReset) {
       const pill = document.getElementById('locationStatus');
       if (!navigator.geolocation) {
@@ -1306,35 +1402,77 @@
       if (forceReset) {
         stopLocationWatcher();
         currentLocation = null;
-        pill.innerHTML = '<span class="pulse-dot"></span><span>Recalibrating GPS...</span>';
-        pill.className = 'loc-pill';
       }
 
-      if (locationWatchId !== null) return;
+      if (locationWatchId !== null && !forceReset) return;
       watchStartedAt = Date.now();
+      pill.innerHTML = '<span class="pulse-dot"></span><span>Acquiring GPS location...</span>';
+      pill.className = 'loc-pill';
 
       navigator.geolocation.getCurrentPosition(
         pos => {
-          if (!currentLocation) applyLocationReading(pos);
+          applyLocationReading(pos);
+          beginWatchPositionOnly();
         },
-        () => {},
-        { enableHighAccuracy: false, timeout: 3000, maximumAge: 60000 }
-      );
-
-      locationWatchId = navigator.geolocation.watchPosition(
-        pos => applyLocationReading(pos),
-        () => {
-          if (!currentLocation) {
-            pill.textContent = 'Location access denied or unavailable';
-            pill.className = 'loc-pill err';
+        err => {
+          // If high-accuracy timed out on iOS indoors, retry with standard Wi-Fi/cell accuracy first
+          if (err && err.code === 3) {
+            navigator.geolocation.getCurrentPosition(
+              pos2 => {
+                applyLocationReading(pos2);
+                beginWatchPositionOnly();
+              },
+              err2 => {
+                const details = document.getElementById('locationDetails');
+                pill.textContent = err2 && err2.code === 1 ? 'Location permission denied' : 'Unable to lock GPS';
+                pill.className = 'loc-pill err';
+                details.classList.remove('hidden');
+                document.getElementById('locationAddress').textContent = 'Location Verification Required';
+                document.getElementById('locationCoords').textContent = formatGeolocationError(err2);
+                beginWatchPositionOnly();
+              },
+              { enableHighAccuracy: false, timeout: 12000, maximumAge: 30000 }
+            );
+          } else {
             const details = document.getElementById('locationDetails');
+            pill.textContent = err && err.code === 1 ? 'Location permission denied' : 'Unable to lock GPS';
+            pill.className = 'loc-pill err';
             details.classList.remove('hidden');
-            document.getElementById('locationAddress').textContent = 'Unable to verify your location';
-            document.getElementById('locationCoords').textContent = 'Enable High-Accuracy GPS in your phone settings, then tap Recalibrate GPS.';
+            document.getElementById('locationAddress').textContent = 'Location Verification Required';
+            document.getElementById('locationCoords').textContent = formatGeolocationError(err);
           }
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
       );
+    }
+
+    function requestLocationFromUserTap() {
+      startSmoothLocationTracker(true);
+    }
+
+    async function autoStartLocationIfPermitted() {
+      if (!navigator.geolocation) return;
+      // On iOS Safari, avoid silent auto-prompting without user tap if permission is still 'prompt'
+      if (IS_IOS && navigator.permissions && navigator.permissions.query) {
+        try {
+          const perm = await navigator.permissions.query({ name: 'geolocation' });
+          if (perm.state === 'granted') {
+            startSmoothLocationTracker(false);
+          } else {
+            const pill = document.getElementById('locationStatus');
+            pill.innerHTML = '<span>Tap "Verify / Recalibrate GPS" below to allow location</span>';
+            pill.className = 'loc-pill warn';
+          }
+          return;
+        } catch (e) {}
+      }
+      if (!IS_IOS) {
+        startSmoothLocationTracker(false);
+      } else {
+        const pill = document.getElementById('locationStatus');
+        pill.innerHTML = '<span>Tap "Verify / Recalibrate GPS" below to allow location</span>';
+        pill.className = 'loc-pill warn';
+      }
     }
 
     function refreshLocation(manualReset) {
@@ -1350,18 +1488,18 @@
           resolve(currentLocation);
           return;
         }
-        startSmoothLocationTracker(false);
         navigator.geolocation.getCurrentPosition(
           pos => {
             const loc = applyLocationReading(pos);
+            beginWatchPositionOnly();
             if (loc.inZone) resolve(loc);
             else reject(new Error('Submission Blocked: You are outside ' + ALLOWED_ZONE.label + ' (~' + loc.distance + 'm away).'));
           },
-          () => {
+          err => {
             if (currentLocation && currentLocation.inZone) resolve(currentLocation);
-            else reject(new Error('Location permission is required to verify you are inside SM City Batangas premises.'));
+            else reject(new Error(formatGeolocationError(err)));
           },
-          { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
         );
       });
     }
@@ -1859,7 +1997,7 @@
       }
       const d = new Date();
       document.getElementById('dashMonth').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-      startSmoothLocationTracker(false);
+      autoStartLocationIfPermitted();
     })();
   </script>
 </body>
