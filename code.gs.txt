@@ -285,7 +285,7 @@ function isWithinAllowedArea_(lat, lng, accuracy, resolvedAddress) {
 
 // ==========================================
 // FAST GEMINI AI PERSON VERIFICATION
-// (WITH AUTO-MODEL DISCOVERY)
+// (WITH iOS MIME NORMALIZATION & AUTO-MODEL DISCOVERY)
 // ==========================================
 
 function getGeminiKey_() {
@@ -362,6 +362,19 @@ function getAvailableGeminiModels_(apiKey) {
 function computeSelfieHash_(base64Body) {
   const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, base64Body);
   return digest.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
+}
+
+function parseSelfieDataUrl_(base64Data) {
+  const raw = String(base64Data || '').trim();
+  const parts = raw.split(',');
+  if (parts.length < 2 || !parts[1]) {
+    throw new Error('Invalid image format captured. Please retake the selfie.');
+  }
+  const mimeMatch = parts[0].match(/data:(image\/[a-zA-Z0-9.+-]+);base64/i);
+  let mimeType = mimeMatch ? mimeMatch[1].toLowerCase() : 'image/jpeg';
+  // Normalize non-standard iOS MIME variants
+  if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
+  return { mimeType: mimeType, base64Body: parts[1] };
 }
 
 function callGeminiFast_(parts, responseMimeType) {
@@ -441,14 +454,9 @@ function verifySelfieWithAI_(base64Data) {
     return { verified: true, summary: 'Selfie captured (AI check skipped)' };
   }
 
-  const parts = String(base64Data || '').split(',');
-  if (parts.length < 2 || !parts[1]) {
-    throw new Error('Invalid image format captured. Please retake the selfie.');
-  }
-
-  const mimeMatch = parts[0].match(/data:(image\/[a-zA-Z0-9.+-]+);base64/);
-  const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-  const base64Body = parts[1];
+  const parsedImg = parseSelfieDataUrl_(base64Data);
+  const mimeType = parsedImg.mimeType;
+  const base64Body = parsedImg.base64Body;
 
   const cache = CacheService.getScriptCache();
   const hashKey = 'SELFIE_VERIFIED_' + computeSelfieHash_(base64Body).slice(0, 32);
@@ -573,12 +581,13 @@ function saveSelfieToDrive_(base64Data, dateStr, employeeId, action) {
   if (!base64Data || !base64Data.startsWith('data:image/')) {
     throw new Error('A live selfie photo taken by a person is required before submitting.');
   }
-  const parts = base64Data.split(',');
-  const mimeMatch = parts[0].match(/data:(image\/[a-zA-Z0-9.+-]+);base64/);
-  const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-  const bytes = Utilities.base64Decode(parts[1]);
-  const fileName = dateStr + '_' + employeeId + '_' + action + '.jpg';
-  const blob = Utilities.newBlob(bytes, mimeType, fileName);
+  const parsedImg = parseSelfieDataUrl_(base64Data);
+  const bytes = Utilities.base64Decode(parsedImg.base64Body);
+  const ext = parsedImg.mimeType.includes('png') ? '.png'
+    : (parsedImg.mimeType.includes('heic') || parsedImg.mimeType.includes('heif')) ? '.heic'
+    : '.jpg';
+  const fileName = dateStr + '_' + employeeId + '_' + action + ext;
+  const blob = Utilities.newBlob(bytes, parsedImg.mimeType, fileName);
 
   const folder = getSelfieFolder_();
   const file = folder.createFile(blob);
